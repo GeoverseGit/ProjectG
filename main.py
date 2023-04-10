@@ -57,7 +57,7 @@ renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
 
 # Read Data
 reader = vtkXMLUnstructuredGridReader()
-reader.SetFileName('G/VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
+reader.SetFileName('./VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
 reader.Update()
 
 # Extract Array/Field information
