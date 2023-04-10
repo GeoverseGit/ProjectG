@@ -1,7 +1,4 @@
-r"""
-Version for trame 1.x - https://github.com/Kitware/trame/blob/release-v1/examples/PlainPython/ClientOnlyVTK/app.py
-Delta v1..v2          - https://github.com/Kitware/trame/commit/33f52b6bb9eb73129b181699a94be9ad86187d49
-"""
+import vtk
 
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageWithDrawerLayout
@@ -60,7 +57,7 @@ renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
 
 # Read Data
 reader = vtkXMLUnstructuredGridReader()
-reader.SetFileName('./VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
+reader.SetFileName('G/VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
 reader.Update()
 
 # Extract Array/Field information
