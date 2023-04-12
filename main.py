@@ -468,7 +468,7 @@ with SinglePageWithDrawerLayout(server) as layout:
     with layout.content:
         # content components
         with vuetify.VContainer(fluid=True, classes="pa-0 fill-height"):
-            view = vtk_widgets.VtkRemoteLocalView(
+            view = vtk_widgets.VtkLocalView(
                 app.renderWindow, namespace="view", mode="local", interactive_ratio=1
             )
             app.ctrl.view_update = view.update
