@@ -222,14 +222,10 @@ class MyApp:
         self.UpdateView()
 
     def UpdateMeshOpacity(self, mesh_opacity, **kwargs):
-        print('bf', mesh_opacity)
         self.UpdateOpacity(self.mesh_actor, mesh_opacity)
-        print('af', mesh_opacity)
 
     def UpdateWarpOpacity(self, warp_opacity, **kwargs):
-        print('bf',warp_opacity)
         self.UpdateOpacity(self.warp_actor, warp_opacity)
-        print('af',warp_opacity)
 
     def UpdateOpacity(self, actor, magnitude):
         actor.GetProperty().SetOpacity(magnitude)
@@ -272,7 +268,6 @@ class MyApp:
     # -----------------------------------------------------------------------------
     # Selection Change
     def actives_change(self, ids):
-        print('Active changed')
         _id = ids[0]
         if _id == "1":  # Mesh
             self.state.active_ui = "mesh_ui"
@@ -280,7 +275,6 @@ class MyApp:
             self.state.active_ui = "warp_ui"
         else:
             self.state.active_ui = "nothing"
-        print(self.state.active_ui)
 
 
     # Visibility Change
@@ -437,6 +431,7 @@ class MyApp:
                 min=0,
                 max=1,
                 step=0.1,
+                thumb_label=True,
                 label="Opacity",
                 classes="mt-1",
                 hide_details=True,
