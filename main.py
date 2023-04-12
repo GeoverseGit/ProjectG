@@ -17,7 +17,7 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderer,
     vtkRenderWindow,
     vtkRenderWindowInteractor,
-    vtkCamera,
+    vtkLightKit,
 )
 
 from ColorModule import LookupTable, ColorPreset
@@ -44,7 +44,7 @@ class MyApp:
 
         # Visual var 
         self.colors                     = vtkNamedColors()
-        self.camera                     = [] 
+        self.lightkit                   = vtkLightKit()
 
         # Initiate vtk mapper, actor
         self.mesh_mapper                = vtkDataSetMapper()
@@ -79,8 +79,8 @@ class MyApp:
         self.state.change("mesh_color_preset")(self.UpdateMeshColorPreset)
         self.state.change("warp_color_array_idx")(self.UpdateWarpColorByName)
         self.state.change("warp_color_preset")(self.UpdateWarpColorPreset)
-        self.state.change("mesh_opacity")
-        self.state.change("warp_opactiy")
+        self.state.change("mesh_opacity")(self.UpdateMeshOpacity)
+        self.state.change("warp_opacity")(self.UpdateWarpOpacity)
         self.state.change("scale_for_warp")(self.UpdateWarpScale)
 
 # -----------------------------------------------------------------------------
@@ -90,6 +90,7 @@ class MyApp:
        
         print('Start Initialze')
         self.SetUpRender()
+        self.SetUpLight()
         self.SetUpCamera()
         self.ReadVTK()
         self.ExtractDataSet()
@@ -108,6 +109,12 @@ class MyApp:
         self.renderWindow.AddRenderer(self.renderer)
         self.renderWindowInteractor.SetRenderWindow(self.renderWindow)
         self.renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
+
+    def SetUpLight(self):
+        self.lightkit.AddLightsToRenderer(self.renderer)
+        self.lightkit.SetHeadLightWarmth(0.5)
+        self.lightkit.SetFillLightWarmth(0.5)
+        self.lightkit.SetKeyLightWarmth(0.5)
     
     def SetUpCamera(self):
         self.camera = self.renderer.GetActiveCamera()   
@@ -212,6 +219,20 @@ class MyApp:
         self.warp.SetScaleFactor(self.warp_scale)
         self.InitializeWarpMapper()
         self.InitializeWarpActor()
+        self.UpdateView()
+
+    def UpdateMeshOpacity(self, mesh_opacity, **kwargs):
+        print('bf', mesh_opacity)
+        self.UpdateOpacity(self.mesh_actor, mesh_opacity)
+        print('af', mesh_opacity)
+
+    def UpdateWarpOpacity(self, warp_opacity, **kwargs):
+        print('bf',warp_opacity)
+        self.UpdateOpacity(self.warp_actor, warp_opacity)
+        print('af',warp_opacity)
+
+    def UpdateOpacity(self, actor, magnitude):
+        actor.GetProperty().SetOpacity(magnitude)
         self.UpdateView()
 
     def UpdateMeshColorByName(self, mesh_color_array_idx, **kwargs):
@@ -371,12 +392,11 @@ class MyApp:
     def warp_card(self):
         with self.ui_card(title="Warp", ui_name="warp_ui"):
             vuetify.VSlider(
-                # Opacity
-                v_model=("warp_opacity", 1.0),
-                min=0,
-                max=1,
-                step=0.1,
-                label="Opacity",
+                v_model=("scale_for_warp", 1.0),
+                min=1,
+                max=1000,
+                step=1,
+                label="Warp scale",
                 classes="mt-1",
                 hide_details=True,
                 dense=True,
@@ -413,12 +433,11 @@ class MyApp:
                         classes="pt-1",
                     )
             vuetify.VSlider(
-                # Opacity
-                v_model=("scale_for_warp", 1.0),
-                min=1,
-                max=1000,
-                step=1,
-                label="Warp scale",
+                v_model=("warp_opacity", 1.0),
+                min=0,
+                max=1,
+                step=0.1,
+                label="Opacity",
                 classes="mt-1",
                 hide_details=True,
                 dense=True,
