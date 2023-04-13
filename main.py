@@ -451,7 +451,7 @@ app.state.setdefault("active_ui", "mesh_ui")
 # -----------------------------------------------------------------------------
 with SinglePageWithDrawerLayout(server) as layout:
 
-    layout.title.set_text("Viewer")
+    layout.title.set_text("Geoverse Vision Technology")
     with layout.toolbar:
         # toolbar components
         vuetify.VSpacer()
