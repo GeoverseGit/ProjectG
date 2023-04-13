@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: py-para-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: py-para
+  template:
+    metadata:
+      labels:
+        app: py-para
+    spec:
+      containers:
+      - name: py-para
+        image: ballstertsk/gv:latest
+        ports:
+        - containerPort: 1234
+      imagePullSecrets:
+      - name: acr-secret

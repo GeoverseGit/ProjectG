@@ -28,7 +28,9 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
 RUN mkdir /GV \
     && cd /GV \
     && git init \
-    && git pull https://github.com/GeoverseGit/ProjectG.git master
+    && git remote add origin https://github.com/GeoverseGit/ProjectG.git \
+    && git fetch --all \
+    && git reset --hard origin/master
 
 RUN /bin/bash -c "source activate python-app && pip install vtk trame"
 
