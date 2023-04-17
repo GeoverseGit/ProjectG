@@ -20,7 +20,11 @@ from vtkmodules.vtkRenderingCore import (
     vtkLightKit,
 )
 
+from pprint import pprint
+
 from ColorModule import LookupTable, ColorPreset
+
+
 
 # -----------------------------------------------------------------------------
 # Wavelet Application
@@ -41,6 +45,7 @@ class MyApp:
         self.renderer                   = vtkRenderer()
         self.renderWindow               = vtkRenderWindow()
         self.renderWindowInteractor     = vtkRenderWindowInteractor()
+        self.camera                     = []
 
         # Visual var 
         self.colors                     = vtkNamedColors()
@@ -52,6 +57,7 @@ class MyApp:
         self.warp                       = vtk.vtkWarpVector()
         self.warp_mapper                = vtkDataSetMapper()
         self.warp_actor                 = vtkActor()
+        self.cube_axes                  = vtkCubeAxesActor()
 
         self._running = False
 
@@ -82,6 +88,7 @@ class MyApp:
         self.state.change("mesh_opacity")(self.UpdateMeshOpacity)
         self.state.change("warp_opacity")(self.UpdateWarpOpacity)
         self.state.change("scale_for_warp")(self.UpdateWarpScale)
+        self.state.change("cube_axes_visibility")(self.UpdateCubeAxesVisibilty)
 
 # -----------------------------------------------------------------------------
 # General APIs (Visibility)
@@ -101,6 +108,7 @@ class MyApp:
         self.InitializeWarp()
         self.InitializeWarpMapper()
         self.InitializeWarpActor()
+        self.SetUpCubeAxes()
         print('Initialze finished')
         self._running = True
 
@@ -117,11 +125,11 @@ class MyApp:
         self.lightkit.SetKeyLightWarmth(0.5)
     
     def SetUpCamera(self):
-        self.camera = self.renderer.GetActiveCamera()   
-
+        self.camera = self.renderer.GetActiveCamera()    
         # This view is okk, but we have to wirte method later for cal proper view automatically   
         p = {'position'         : (175.57928933895226, -48.246428725103065, 40.884611931851765), 
              'focal point'      : (63.9077934374408, 35.45726816337757, 8.713665132410494), 
+             #'focal point'      : (0, 70, -10),
              'view up'          : (-0.21329675699056322, 0.08935923577768858, 0.9728922964226493), 
              'distance'         : 143.2194179839187, 
              'clipping range'   : (0.01, 1000.01), 
@@ -143,7 +151,21 @@ class MyApp:
         p['distance']       = self.camera.GetDistance()
         p['clipping range'] = self.camera.GetClippingRange()
         p['orientation']    = self.camera.GetOrientation()
-        print(p)
+        
+        for key, val in p.items():
+            print(key, ' : ', val)
+
+
+    def SetUpCubeAxes(self):
+        self.renderer.AddActor(self.cube_axes)
+        self.cube_axes.SetBounds(self.mesh_actor.GetBounds())
+        self.cube_axes.SetCamera(self.renderer.GetActiveCamera())
+        self.cube_axes.SetXLabelFormat("%6.1f")
+        self.cube_axes.SetYLabelFormat("%6.1f")
+        self.cube_axes.SetZLabelFormat("%6.1f")
+        self.cube_axes.SetFlyModeToOuterEdges()
+
+        self.renderer.ResetCamera()
 
     def ReadVTK(self):
         self.reader.SetFileName('./VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
@@ -230,6 +252,11 @@ class MyApp:
     def UpdateOpacity(self, actor, magnitude):
         actor.GetProperty().SetOpacity(magnitude)
         self.UpdateView()
+    
+    def UpdateCubeAxesVisibilty(self, cube_axes_visibility, **kwargs):
+        self.cube_axes.SetVisibility(cube_axes_visibility)
+        #self.GetCurrentCameraPosition()
+        self.UpdateView()
 
     def UpdateMeshColorByName(self, mesh_color_array_idx, **kwargs):
         array = self.dataset_arrays[mesh_color_array_idx]
@@ -308,6 +335,26 @@ class MyApp:
             actives_change=(self.actives_change, "[$event]"),
             visibility_change=(self.visibility_change, "[$event]"),
         )
+
+    def standard_buttons(self):
+        vuetify.VCheckbox(
+            v_model=("cube_axes_visibility", True),
+            on_icon="mdi-cube-outline",
+            off_icon="mdi-cube-off-outline",
+            classes="mx-1",
+            hide_details=True,
+            dense=True,
+        )
+        vuetify.VCheckbox(
+            v_model="$vuetify.theme.dark",
+            on_icon="mdi-lightbulb-off-outline",
+            off_icon="mdi-lightbulb-outline",
+            classes="mx-1",
+            hide_details=True,
+            dense=True,
+        )
+        with vuetify.VBtn(icon=True, click="$refs.view.resetCamera()"):
+            vuetify.VIcon("mdi-crop-free")
 
     def ui_card(self, title, ui_name):
         with vuetify.VCard(v_show=f"active_ui == '{ui_name}'"):
@@ -456,6 +503,7 @@ with SinglePageWithDrawerLayout(server) as layout:
         # toolbar components
         vuetify.VSpacer()
         vuetify.VDivider(vertical=True, classes="mx-2")
+        app.standard_buttons()
 
     with layout.drawer as drawer:
         # drawer components
