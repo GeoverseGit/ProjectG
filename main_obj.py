@@ -14,6 +14,7 @@ from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkDataSetMapper,
+    vtkPolyDataMapper,
     vtkRenderer,
     vtkRenderWindow,
     vtkRenderWindowInteractor,
@@ -51,19 +52,23 @@ class MyApp:
         self.colors                     = vtkNamedColors()
         self.lightkit                   = vtkLightKit()
 
-        # Initiate vtk mapper, actor
-        self.mesh_mapper                = vtkDataSetMapper()
+        # Initiate vtk mapper, actor, texture
+        self.mesh_mapper                = vtkPolyDataMapper()
         self.mesh_actor                 = vtkActor()
         self.warp                       = vtk.vtkWarpVector()
         self.warp_mapper                = vtkDataSetMapper()
         self.warp_actor                 = vtkActor()
         self.cube_axes                  = vtkCubeAxesActor()
+        self.texture                    = vtk.vtkTexture()
+        self.texture_mapper             = vtkPolyDataMapper()
+        self.texture_actor              = vtkActor()
 
         self._running = False
 
         # Readder parameter
         self.reader                     = vtkXMLUnstructuredGridReader()
         self.reader_obj                 = vtk.vtkOBJReader()
+        self.texture_reader             = vtk.vtkJPEGReader()
 
         # Parameters that contain data
         self.dataset_arrays             = []
@@ -99,10 +104,12 @@ class MyApp:
         self.SetUpRender()
         self.SetUpLight()
         self.SetUpCamera()
-        self.SetUpCubeAxes()
         self.ReadOBJ()
+        self.ReadJPG()
         self.InitializeMapper(self.mesh_mapper)
         self.InitializeActor(self.mesh_actor, self.mesh_mapper)
+        self.InitializeTexture()
+        self.SetUpCubeAxes()
         print('Initialze finished')
         self._running = True
 
@@ -156,9 +163,9 @@ class MyApp:
         self.cube_axes.SetXLabelFormat("%6.1f")
         self.cube_axes.SetYLabelFormat("%6.1f")
         self.cube_axes.SetZLabelFormat("%6.1f")
-        self.cube_axes.SetFlyModeToOuterEdges()
-
+        #self.cube_axes.SetFlyModeToOuterEdges()
         self.renderer.ResetCamera()
+        print('Cube axes setup')
 
     def ReadVTK(self):
         self.reader.SetFileName('./VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
@@ -167,6 +174,10 @@ class MyApp:
     def ReadOBJ(self):
         self.reader_obj.SetFileName('./3DMeshData/Sepulvada dam Project_simplified_3d_mesh.obj')
         self.reader_obj.Update()
+
+    def ReadJPG(self):
+        self.texture_reader.SetFileName('./3DMeshData/Sepulvada dam Project_texture.jpg')
+        self.texture_reader.Update()
     
     def ExtractDataSet(self):
             self.fields = [
@@ -191,12 +202,23 @@ class MyApp:
             self.default_min, self.default_max = self.default_array.get("range")
     
     def InitializeMapper(self, mapper):
-        mapper.SetInputConnection(self.reader_obj.GetOutputPort())
+        mapper.SetInputData(self.reader_obj.GetOutput())
 
     def InitializeActor(self, actor, mapper):
         actor.SetMapper(mapper)
         self.renderer.AddActor(actor)
 
+    def InitializeTexture(self):
+        # Texture
+        self.texture.SetInputConnection(self.texture_reader.GetOutputPort())
+        self.texture_mapper.SetInputData(self.reader_obj.GetOutput())
+        # Mapper
+        #self.texture_mapper.AutomaticPlaneGenerationOn()
+        self.texture_mapper.Update()
+        # Actor 
+        self.mesh_actor.SetTexture(self.texture)
+        self.mesh_actor.SetMapper(self.texture_mapper)
+        
     def InitializeWarp(self):
         self.warp.SetInputConnection(self.reader_obj.GetOutputPort())
         self.warp.SetInputArrayToProcess(0, 0, 0, vtkDataObject.FIELD_ASSOCIATION_POINTS, 'Displacement')
@@ -326,7 +348,7 @@ class MyApp:
                 "pipeline",
                 [
                     {"id": "1", "parent": "0", "visible": 1, "name": "Mesh"},
-                    {"id": "2", "parent": "1", "visible": 1, "name": "Warp"},
+                    {"id": "2", "parent": "1", "visible": 1, "name": "Annotate"},
                 ],
             ),
             actives_change=(self.actives_change, "[$event]"),
@@ -367,24 +389,6 @@ class MyApp:
 
     def mesh_card(self):
         with self.ui_card(title="Mesh", ui_name="mesh_ui"):
-            vuetify.VSelect(
-                # Representation
-                v_model = ("mesh_representation", 2),
-                items=(
-                    "representations",
-                    [
-                        {"text": "Points", "value": 0},
-                        {"text": "Wireframe", "value": 1},
-                        {"text": "Surface", "value": 2},
-                        {"text": "SurfaceWithEdges", "value": 3},
-                    ],
-                ),
-                label="Representation",
-                hide_details=True,
-                dense=True,
-                outlined=True,
-                classes="pt-1",
-            )
             vuetify.VSlider(
                 # Opacity
                 v_model=("mesh_opacity", 1.0),
