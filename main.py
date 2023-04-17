@@ -14,6 +14,7 @@ from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkDataSetMapper,
+    vtkPolyDataMapper,
     vtkRenderer,
     vtkRenderWindow,
     vtkRenderWindowInteractor,
@@ -51,18 +52,23 @@ class MyApp:
         self.colors                     = vtkNamedColors()
         self.lightkit                   = vtkLightKit()
 
-        # Initiate vtk mapper, actor
-        self.mesh_mapper                = vtkDataSetMapper()
+        # Initiate vtk mapper, actor, texture
+        self.mesh_mapper                = vtkPolyDataMapper()
         self.mesh_actor                 = vtkActor()
         self.warp                       = vtk.vtkWarpVector()
         self.warp_mapper                = vtkDataSetMapper()
         self.warp_actor                 = vtkActor()
         self.cube_axes                  = vtkCubeAxesActor()
+        self.texture                    = vtk.vtkTexture()
+        self.texture_mapper             = vtkPolyDataMapper()
+        self.texture_actor              = vtkActor()
 
         self._running = False
 
         # Readder parameter
         self.reader                     = vtkXMLUnstructuredGridReader()
+        self.reader_obj                 = vtk.vtkOBJReader()
+        self.texture_reader             = vtk.vtkJPEGReader()
 
         # Parameters that contain data
         self.dataset_arrays             = []
@@ -76,7 +82,6 @@ class MyApp:
         self.mesh_lut                   = []
 
         # # Initialize the App
-        # self.ctrl.on_server_ready.add(self.Initialize)
         self.Initialize()
 
         # State listeners
@@ -99,15 +104,11 @@ class MyApp:
         self.SetUpRender()
         self.SetUpLight()
         self.SetUpCamera()
-        self.ReadVTK()
-        self.ExtractDataSet()
+        self.ReadOBJ()
+        self.ReadJPG()
         self.InitializeMapper(self.mesh_mapper)
-        self.InitializeMapper(self.warp_mapper)
         self.InitializeActor(self.mesh_actor, self.mesh_mapper)
-        self.InitializeActor(self.warp_actor, self.warp_mapper)
-        self.InitializeWarp()
-        self.InitializeWarpMapper()
-        self.InitializeWarpActor()
+        self.InitializeTexture()
         self.SetUpCubeAxes()
         print('Initialze finished')
         self._running = True
@@ -129,7 +130,6 @@ class MyApp:
         # This view is okk, but we have to wirte method later for cal proper view automatically   
         p = {'position'         : (175.57928933895226, -48.246428725103065, 40.884611931851765), 
              'focal point'      : (63.9077934374408, 35.45726816337757, 8.713665132410494), 
-             #'focal point'      : (0, 70, -10),
              'view up'          : (-0.21329675699056322, 0.08935923577768858, 0.9728922964226493), 
              'distance'         : 143.2194179839187, 
              'clipping range'   : (0.01, 1000.01), 
@@ -163,13 +163,21 @@ class MyApp:
         self.cube_axes.SetXLabelFormat("%6.1f")
         self.cube_axes.SetYLabelFormat("%6.1f")
         self.cube_axes.SetZLabelFormat("%6.1f")
-        self.cube_axes.SetFlyModeToOuterEdges()
-
+        #self.cube_axes.SetFlyModeToOuterEdges()
         self.renderer.ResetCamera()
+        print('Cube axes setup')
 
     def ReadVTK(self):
         self.reader.SetFileName('./VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
         self.reader.Update()
+
+    def ReadOBJ(self):
+        self.reader_obj.SetFileName('./3DMeshData/Sepulvada dam Project_simplified_3d_mesh.obj')
+        self.reader_obj.Update()
+
+    def ReadJPG(self):
+        self.texture_reader.SetFileName('./3DMeshData/Sepulvada dam Project_texture.jpg')
+        self.texture_reader.Update()
     
     def ExtractDataSet(self):
             self.fields = [
@@ -194,14 +202,25 @@ class MyApp:
             self.default_min, self.default_max = self.default_array.get("range")
     
     def InitializeMapper(self, mapper):
-        mapper.SetInputConnection(self.reader.GetOutputPort())
+        mapper.SetInputData(self.reader_obj.GetOutput())
 
     def InitializeActor(self, actor, mapper):
         actor.SetMapper(mapper)
         self.renderer.AddActor(actor)
 
+    def InitializeTexture(self):
+        # Texture
+        self.texture.SetInputConnection(self.texture_reader.GetOutputPort())
+        self.texture_mapper.SetInputData(self.reader_obj.GetOutput())
+        # Mapper
+        #self.texture_mapper.AutomaticPlaneGenerationOn()
+        self.texture_mapper.Update()
+        # Actor 
+        self.mesh_actor.SetTexture(self.texture)
+        self.mesh_actor.SetMapper(self.texture_mapper)
+        
     def InitializeWarp(self):
-        self.warp.SetInputConnection(self.reader.GetOutputPort())
+        self.warp.SetInputConnection(self.reader_obj.GetOutputPort())
         self.warp.SetInputArrayToProcess(0, 0, 0, vtkDataObject.FIELD_ASSOCIATION_POINTS, 'Displacement')
         self.warp.SetScaleFactor(1)
         self.warp.Update()
@@ -255,7 +274,7 @@ class MyApp:
     
     def UpdateCubeAxesVisibilty(self, cube_axes_visibility, **kwargs):
         self.cube_axes.SetVisibility(cube_axes_visibility)
-        #self.GetCurrentCameraPosition()
+        self.GetCurrentCameraPosition()
         self.UpdateView()
 
     def UpdateMeshColorByName(self, mesh_color_array_idx, **kwargs):
@@ -329,7 +348,7 @@ class MyApp:
                 "pipeline",
                 [
                     {"id": "1", "parent": "0", "visible": 1, "name": "Mesh"},
-                    {"id": "2", "parent": "1", "visible": 1, "name": "Warp"},
+                    {"id": "2", "parent": "1", "visible": 1, "name": "Annotate"},
                 ],
             ),
             actives_change=(self.actives_change, "[$event]"),
@@ -370,55 +389,6 @@ class MyApp:
 
     def mesh_card(self):
         with self.ui_card(title="Mesh", ui_name="mesh_ui"):
-            vuetify.VSelect(
-                # Representation
-                v_model = ("mesh_representation", 3),
-                items=(
-                    "representations",
-                    [
-                        {"text": "Points", "value": 0},
-                        {"text": "Wireframe", "value": 1},
-                        {"text": "Surface", "value": 2},
-                        {"text": "SurfaceWithEdges", "value": 3},
-                    ],
-                ),
-                label="Representation",
-                hide_details=True,
-                dense=True,
-                outlined=True,
-                classes="pt-1",
-            )
-            with vuetify.VRow(classes="pt-2", dense=True):
-                with vuetify.VCol(cols="6"):
-                    vuetify.VSelect(
-                        # Color By
-                        label="Color by",
-                        v_model=("mesh_color_array_idx", 0),
-                        items=("array_list", app.dataset_arrays),
-                        hide_details=True,
-                        dense=True,
-                        outlined=True,
-                        classes="pt-1",
-                    )
-                with vuetify.VCol(cols="6"):
-                    vuetify.VSelect(
-                        # Color Map
-                        label="Colormap",
-                        v_model=("mesh_color_preset", LookupTable.Rainbow),
-                        items=(
-                            "colormaps",
-                            [
-                                {"text": "Rainbow", "value": 0},
-                                {"text": "Inv Rainbow", "value": 1},
-                                {"text": "Greyscale", "value": 2},
-                                {"text": "Inv Greyscale", "value": 3},
-                            ],
-                        ),
-                        hide_details=True,
-                        dense=True,
-                        outlined=True,
-                        classes="pt-1",
-                    )
             vuetify.VSlider(
                 # Opacity
                 v_model=("mesh_opacity", 1.0),
@@ -484,6 +454,26 @@ class MyApp:
                 hide_details=True,
                 dense=True,
             )
+    def annotation_card(self):
+        with self.ui_card(title="Annotation", ui_name="anntation_ui"):
+            vuetify.VSelect(
+                # Representation
+                #v_model = ("mesh_representation", 3),
+                items=(
+                    "representations",
+                    [
+                        {"text": "Points", "value": 0},
+                        {"text": "Wireframe", "value": 1},
+                        {"text": "Surface", "value": 2},
+                        {"text": "SurfaceWithEdges", "value": 3},
+                    ],
+                ),
+                label="Annotation",
+                hide_details=True,
+                dense=True,
+                outlined=True,
+                classes="pt-1",
+            )
 
 # -----------------------------------------------------------------------------
 # Setup
@@ -511,7 +501,7 @@ with SinglePageWithDrawerLayout(server) as layout:
         app.pipeline_widget()
         vuetify.VDivider(classes="mb-2")
         app.mesh_card()
-        app.warp_card()
+        app.annotation_card()
 
     with layout.content:
         # content components
