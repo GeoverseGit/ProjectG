@@ -1,9 +1,12 @@
 import vtk
-import asyncio
+import time
+from pymongo.mongo_client import MongoClient
 from trame.app import get_server, asynchronous
 from trame.ui.vuetify import SinglePageWithDrawerLayout
 from trame.widgets import vuetify, trame, vtk as vtk_widgets
 
+
+from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 from vtkmodules.vtkCommonDataModel import vtkDataObject
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkFiltersCore import vtkContourFilter
@@ -25,10 +28,29 @@ from pprint import pprint
 
 from ColorModule import LookupTable, ColorPreset
 
+    
+class MyInteractorStyle(vtkInteractorStyleTrackballCamera):
+    def __init__(self, parent=None):
+        self.AddObserver('LeftButtonPressEvent', self.left_button_press_event)
+        self.AddObserver('LeftButtonReleaseEvent', self.left_button_release_event)
+        self.start_time = None
 
-
+    def left_button_press_event(self, obj, event):
+        self.start_time = time.time()
+        self.OnLeftButtonDown()
+        return
+    
+    def left_button_release_event(self, obj, event):
+        elapsed_time = time.time() - self.start_time
+        if elapsed_time < 100/1000:
+            clickPos = self.GetInteractor().GetEventPosition()
+            if app.annotation_mode:
+                app.ReadMousePosition(clickPos)
+        self.OnLeftButtonUp()
+        return
+        
 # -----------------------------------------------------------------------------
-# Wavelet Application
+# 3D Visualize model and annotation
 # -----------------------------------------------------------------------------
 class MyApp:
     def __init__(self, server=None):
@@ -39,14 +61,29 @@ class MyApp:
         self.state  = server.state
         self.ctrl   = server.controller
 
-        # Initialize the App
-        # self.ctrl.on_server_ready.add(self.Initialize)
+        # Initialize database parameter
+        self.uri                        = []
+        self.client                     = []
+        self.database                   = []
+        self.collection                 = []
+        self.documents                  = []
+        self.total_documents            = []
+        self.documents_list             = []
 
-        # Initialize viewer var
+        # Initialize gui parameters
+        self.dialog_open                = False
+
+        # Initialize the editedItem list with the same length as the documents_list
+        self.state.editedItem           = [] 
+        self.choosing_idx               = []
+        
+        # Initialize the App
         self.renderer                   = vtkRenderer()
         self.renderWindow               = vtkRenderWindow()
         self.renderWindowInteractor     = vtkRenderWindowInteractor()
+
         self.camera                     = []
+        
 
         # Visual var 
         self.colors                     = vtkNamedColors()
@@ -62,8 +99,18 @@ class MyApp:
         self.texture                    = vtk.vtkTexture()
         self.texture_mapper             = vtkPolyDataMapper()
         self.texture_actor              = vtkActor()
+        self.glyph                      = vtk.vtkGlyph3D()
+        self.points                     = vtk.vtkPoints()
+        self.glyph_data                 = vtk.vtkPolyData()
+        self.glyph_mapper               = vtkPolyDataMapper()
+        self.glyph_actor                = vtkActor()
+        self.anno_transform             = vtk.vtkTransform()
+        self.box_widgets                = vtk.vtkBoxWidget()
 
         self._running = False
+
+        # State parameter
+        self.annotation_mode            = False
 
         # Readder parameter
         self.reader                     = vtkXMLUnstructuredGridReader()
@@ -94,13 +141,19 @@ class MyApp:
         self.state.change("warp_opacity")(self.UpdateWarpOpacity)
         self.state.change("scale_for_warp")(self.UpdateWarpScale)
         self.state.change("cube_axes_visibility")(self.UpdateCubeAxesVisibilty)
+        self.state.change("annotation_trigger")(self.UpdateAnnotationMode)
 
 # -----------------------------------------------------------------------------
 # General APIs (Visibility)
 # -----------------------------------------------------------------------------
+    def register_method(self):
+        trame.register_state_update("open_dialog",self.open_dialog)
+
     def Initialize(self, **kwargs):
-       
+
         print('Start Initialze')
+        self.SetUpDatabase()
+        self.InitializeEditedItem()
         self.SetUpRender()
         self.SetUpLight()
         self.SetUpCamera()
@@ -109,15 +162,49 @@ class MyApp:
         self.InitializeMapper(self.mesh_mapper)
         self.InitializeActor(self.mesh_actor, self.mesh_mapper)
         self.InitializeTexture()
+        self.InitializeGlyph()
         self.SetUpCubeAxes()
+        self.SetUpInteractor()
         print('Initialze finished')
         self._running = True
-
+    
+    def SetUpDatabase(self):
+        self.uri        = "mongodb+srv://SuperAdmin:admin@cluster0.gins5pf.mongodb.net/?retryWrites=true&w=majority"
+        self.client     = MongoClient(self.uri)
+        self.database   = self.client.AnnotationDB
+        self.collection = self.database.AnnotationCL 
+        self.documents  = self.collection.find({})
+        self.total_documents = self.collection.count_documents({})
+        self.documents_list  =list(self.documents)
+    
+    def InitializeEditedItem(self):
+            # Initialize the editedItem list with the same length as the documents_list
+        self.state.editedItem = [
+            {
+                "name" : doc["name"],
+                "x"    : doc["x"],
+                "y"    : doc["y"],
+                "z"    : doc["z"],
+                "level": doc.get("level", 1),  # Assuming 'level' is an optional field with a default value of 1
+            }
+            for doc in self.documents_list
+        ]
+    
     def SetUpRender(self):
-        self.renderer.SetBackground(self.colors.GetColor3d('ghost_white'))
+        self.renderer.SetBackground(self.colors.GetColor3d('slate_grey')) #ghost white good
         self.renderWindow.AddRenderer(self.renderer)
+        
+    def SetUpInteractor(self):
+        #if annote == True:
+        print('Setting up interactor')
+        style = MyInteractorStyle()
         self.renderWindowInteractor.SetRenderWindow(self.renderWindow)
-        self.renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
+        self.renderWindowInteractor.SetInteractorStyle(style)
+        self.renderWindowInteractor.Initialize()
+        #self.renderWindowInteractor.Start()
+
+    def boxcall(self):
+        print('Clicked')
 
     def SetUpLight(self):
         self.lightkit.AddLightsToRenderer(self.renderer)
@@ -151,21 +238,31 @@ class MyApp:
         p['distance']       = self.camera.GetDistance()
         p['clipping range'] = self.camera.GetClippingRange()
         p['orientation']    = self.camera.GetOrientation()
-        
-        for key, val in p.items():
-            print(key, ' : ', val)
-
 
     def SetUpCubeAxes(self):
+        axis1Color = self.colors.GetColor3d("Salmon")
+        axis2Color = self.colors.GetColor3d("PaleGreen")
+        axis3Color = self.colors.GetColor3d("LightSkyBlue")
+        axeColor   = self.colors.GetColor3d("White")
+
         self.renderer.AddActor(self.cube_axes)
         self.cube_axes.SetBounds(self.mesh_actor.GetBounds())
         self.cube_axes.SetCamera(self.renderer.GetActiveCamera())
         self.cube_axes.SetXLabelFormat("%6.1f")
         self.cube_axes.SetYLabelFormat("%6.1f")
         self.cube_axes.SetZLabelFormat("%6.1f")
-        #self.cube_axes.SetFlyModeToOuterEdges()
+        self.cube_axes.GetTitleTextProperty(0).SetColor(axis1Color)
+        self.cube_axes.GetLabelTextProperty(0).SetColor(axis1Color)
+        self.cube_axes.GetXAxesLinesProperty().SetColor(axeColor)
+        #self.cube_axes.GetXAxesGridlinesProperty().SetColor(axis1Color)
+        self.cube_axes.GetTitleTextProperty(1).SetColor(axis2Color)
+        self.cube_axes.GetLabelTextProperty(1).SetColor(axis2Color)
+        self.cube_axes.GetYAxesLinesProperty().SetColor(axeColor)
+        self.cube_axes.GetTitleTextProperty(2).SetColor(axis3Color)
+        self.cube_axes.GetLabelTextProperty(2).SetColor(axis3Color)
+        self.cube_axes.GetZAxesLinesProperty().SetColor(axeColor)
+        self.cube_axes.SetFlyModeToOuterEdges()
         self.renderer.ResetCamera()
-        print('Cube axes setup')
 
     def ReadVTK(self):
         self.reader.SetFileName('./VTKdata/data_nodal_Consolidation1 [Phase_1]_step_8_soil.vtu')
@@ -230,11 +327,46 @@ class MyApp:
     
     def InitializeWarpActor(self):
         self.warp_actor.SetMapper(self.warp_mapper)
+    
+    def InitializeGlyph(self):
+        glyph_source = vtk.vtkConeSource()
+        glyph_source.SetResolution(10)
+        glyph_source.SetDirection(0, 0, -1)
+        glyph_source.Update()
+
+        for doc in self.documents_list:
+            self.points.InsertNextPoint(doc['x'], doc['y'], doc['z'])
+
+        self.glyph_data.SetPoints(self.points)
+
+        self.glyph.SetSourceConnection(glyph_source.GetOutputPort())  # Set the input source for the glyphs
+        self.glyph.SetInputData(self.glyph_data)
+        self.glyph.SetScaleModeToScaleByScalar()  # Set the scaling mode for the glyphs
+        self.glyph.SetScaleFactor(1)  # Set the scale factor for the glyphs
+        self.glyph.Update()
+
+        self.glyph_mapper.SetInputConnection(self.glyph.GetOutputPort())
+
+        self.glyph_actor.SetMapper(self.glyph_mapper)
+
+        self.glyph_actor.GetProperty().SetColor(0, 1, 0)
+        self.renderer.AddActor(self.glyph_actor)
+
+        self.UpdateView()
+    
+    def UpdateAnnotationMode(self, annotation_trigger, **kwargs):
+        self.annotation_mode = annotation_trigger
 
     def UpdateMeshRepresentation(self, mesh_representation, **kwargs):
         self.UpdateRepresentation(self.mesh_actor, mesh_representation)
         self.UpdateRepresentation(self.warp_actor, mesh_representation)
-        self.UpdateView()
+
+    def ReadMousePosition(self, clickPos):        
+        picker = vtk.vtkCellPicker()
+        picker.SetTolerance(1/1000)
+        picker.Pick(clickPos[0], clickPos[1], 0, self.renderer)
+        picked_pos = picker.GetPickPosition()
+        print(f"Picked position: ({picked_pos[0]:.2f}, {picked_pos[1]:.2f}, {picked_pos[2]:.2f})")
 
     def UpdateRepresentation(self, actor, rep_type):
         property = actor.GetProperty()
@@ -318,7 +450,7 @@ class MyApp:
         if _id == "1":  # Mesh
             self.state.active_ui = "mesh_ui"
         elif _id == "2":  # Warp
-            self.state.active_ui = "warp_ui"
+            self.state.active_ui = "annotation_ui"
         else:
             self.state.active_ui = "nothing"
 
@@ -368,6 +500,14 @@ class MyApp:
             v_model="$vuetify.theme.dark",
             on_icon="mdi-lightbulb-off-outline",
             off_icon="mdi-lightbulb-outline",
+            classes="mx-1",
+            hide_details=True,
+            dense=True,
+        )
+        vuetify.VCheckbox(
+            v_model=("annotation_trigger", False),
+            on_icon="mdi-circle-outline",
+            off_icon="mdi-circle-off-outline",
             classes="mx-1",
             hide_details=True,
             dense=True,
@@ -454,34 +594,68 @@ class MyApp:
                 hide_details=True,
                 dense=True,
             )
-    def annotation_card(self):
-        with self.ui_card(title="Annotation", ui_name="anntation_ui"):
-            vuetify.VSelect(
-                # Representation
-                #v_model = ("mesh_representation", 3),
-                items=(
-                    "representations",
-                    [
-                        {"text": "Points", "value": 0},
-                        {"text": "Wireframe", "value": 1},
-                        {"text": "Surface", "value": 2},
-                        {"text": "SurfaceWithEdges", "value": 3},
-                    ],
-                ),
-                label="Annotation",
-                hide_details=True,
-                dense=True,
-                outlined=True,
-                classes="pt-1",
-            )
 
+    def annotation_card(self):
+        with self.ui_card(title="Annotation", ui_name="annotation_ui"):
+            with vuetify.VList(shaped=True, v_model=("abc", 0)):
+                for idx, doc in enumerate(self.documents_list):
+                    with vuetify.VListItem():
+                        with vuetify.VListItemIcon():
+                            vuetify.VIcon("mdi-food")
+                        with vuetify.VListItemContent():
+                            vuetify.VListItemTitle(doc['name'])
+                        vuetify.VBtn(class_="mb-2", children=["Edit"],
+                                     click=self.open_dialog)
+                        self.choosing_idx = idx
+
+            with vuetify.VDialog(v_model=("dialog", False), max_width="500px") as dialog:
+                with vuetify.VCard():
+                    vuetify.VCardTitle(children=['New entry'])
+                    vuetify.VCardText()
+                    with vuetify.VContainer():
+                        with vuetify.VRow():
+                            for prop, label in [
+                                ("editedItem.name", "Name"),
+                                ("editedItem.x", "x"),
+                                ("editedItem.y", "y"),
+                                ("editedItem.z", "z"),
+                                ("editedItem.level", "level"),
+                            ]:
+                                with vuetify.VCol(cols="12", sm="6", md="4"):
+                                    vuetify.VTextField(v_model=(prop,), label=label)
+                    with vuetify.VCardActions():
+                        vuetify.VSpacer()
+                        vuetify.VBtn(color="blue darken-1", text=True, children=["Cancel"],
+                                     click="close_dialog()")
+                        vuetify.VBtn(color="blue darken-1", text=True, children=["Save"],
+                                     click="save_changes()")
+
+    def open_dialog(self):
+        self.state.selected_idx = self.choosing_idx
+        self.state.editedItem = self.documents_list[self.choosing_idx]
+        self.state["dialog"] = True
+
+    def close_dialog(self):
+        self.state["dialog"] = False
+
+    def save_changes(self):
+        # Update the documents_list with the edited_item
+        self.documents_list[self.state.selected_idx] = self.state.editedItem
+        # Save the updated annotation to the database
+        self.update_annotation_in_db(self.state.editedItem)
+        # Close the dialog after saving changes
+        trame.set_state("dialog", False)
+
+    def update_annotation_in_db(self, annotation):
+        # Implement the function to update the annotation in the database
+        pass
 # -----------------------------------------------------------------------------
 # Setup
 # -----------------------------------------------------------------------------
 
 server = get_server()
 app    = MyApp(server)
-app.state.setdefault("active_ui", "mesh_ui")
+app.state.setdefault("active_ui", "annotation_ui")
 
 # -----------------------------------------------------------------------------
 # GUIs
@@ -506,12 +680,17 @@ with SinglePageWithDrawerLayout(server) as layout:
     with layout.content:
         # content components
         with vuetify.VContainer(fluid=True, classes="pa-0 fill-height"):
-            view = vtk_widgets.VtkLocalView(
-                app.renderWindow, namespace="view", mode="local", interactive_ratio=1
+            # ------------ For Local View -------------
+            # view = vtk_widgets.VtkLocalView(
+            #     app.renderWindow, namespace="view", mode="local", interactive_ratio=1
+            # )
+            # ------------ Remote View ---------------
+            view = vtk_widgets.VtkRemoteView(
+                app.renderWindow, ref = "view",
             )
+            # ----------------------------------------
             app.ctrl.view_update = view.update
             app.ctrl.view_reset_camera = view.reset_camera
-            app.ctrl.on_server_ready.add(view.update)
 
 # -----------------------------------------------------------------------------
 # START
@@ -519,3 +698,4 @@ with SinglePageWithDrawerLayout(server) as layout:
 
 if __name__ == "__main__":
     server.start()
+    
